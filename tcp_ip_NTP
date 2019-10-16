@@ -1,0 +1,156 @@
+#include <SPI.h>
+#include <Ethernet.h>
+#include <Dns.h>
+#include <TimeLib.h>  
+
+//#define MODULE  "ENC28J60" //Uncomment if your using ENC28J60
+#define MODULE "W5100"
+
+byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED}; //You can customize your burn-in-address here
+unsigned int localPort = 8888;      // local port to listen for UDP packets
+IPAddress timeServer;
+const int NTP_PACKET_SIZE= 48; // NTP time stamp is in the first 48 bytes of the message
+byte packetBuffer[ NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets 
+
+
+EthernetUDP Udp; // Set UDP instance to let us send and receive packets over UDP
+
+// dow_char() Return day of week [Sun,Mon,Tue,]
+char * dow_char_EN(byte days) {
+  char *you[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
+  return you[days];
+}
+
+// dow_char() Return day letters
+char * dow_char_JP(byte days) {
+  char *you[] = {"Sunday","Monday","Tuesday","Wenesday","Thursday","Friday","Saturday"};
+  return you[days];
+}
+
+// dow() Indicating the day of the week [0-Sunday, 1-Monday etc.]
+uint8_t dow(unsigned long t) {
+    return ((t / 86400) + 4) % 7;
+}
+
+void showTime(char * title, time_t timet, char * dow) {
+   Serial.print(title);
+   Serial.print(year(timet));
+   Serial.print("/");
+   Serial.print(month(timet));
+   Serial.print("/");
+   Serial.print(day(timet));
+   Serial.print(" ");
+   Serial.print(hour(timet));
+   Serial.print(":");
+   Serial.print(minute(timet));
+   Serial.print(":");
+   Serial.print(second(timet));
+   Serial.print(" [");
+   Serial.print(dow);
+   Serial.println("]");
+}
+void setup() 
+{
+  delay(1000);
+  Serial.begin(9600);
+  if (!Ethernet.begin(mac) ) {
+    Serial.println("Failed to configure Ethernet using DHCP");
+    for(;;)
+      ;
+  }
+
+  DNSClient dns;
+  dns.begin(Ethernet.dnsServerIP());
+//  if(dns.getHostByName("africa.pool.ntp.org",timeServer) == 1) {
+
+    /*
+    LIST OF SNTP Server
+    time.google.com
+    africa.pool.ntp.org
+	antarctica.pool.ntp.org
+	asia.pool.ntp.org
+	europe.pool.ntp.org
+    north-america.pool.ntp.org
+    oceania.pool.ntp.org
+    south-america.pool.ntp.org
+    */
+
+  if(dns.getHostByName("0.pool.ntp.org",timeServer) == 1) { 
+    Serial.print(F("NTP = "));
+    Serial.println(timeServer);
+  } else {
+    Serial.print(F("DNS lookup failed"));
+    while(1) { }
+  }
+    
+  Udp.begin(localPort);
+}
+
+void loop()
+{
+  sendNTPpacket(timeServer); // send an NTP packet to a time server
+  if ( Udp.parsePacket() ) {  
+    Serial.print("\n[NTP Client :");
+    Serial.print(MODULE);
+    Serial.println("]");
+    Udp.read(packetBuffer,NTP_PACKET_SIZE);  // read the packet into the buffer
+    unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
+    unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);  
+    unsigned long secsSince1900 = highWord << 16 | lowWord;  
+    Serial.print("Seconds since Jan 1 1900 = " );
+    Serial.println(secsSince1900);               
+    // now convert NTP time into everyday time:
+    // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
+    const unsigned long seventyYears = 2208988800UL;     
+    // subtract seventy years:
+    unsigned long epoch = secsSince1900 - seventyYears;  
+    // print Unix time:
+    Serial.print("Unix time = ");
+    Serial.println(epoch);                               
+
+#if 0
+    // print the hour, minute and second:
+    Serial.print("The UTC time is ");       // UTC is the time at Greenwich Meridian (GMT)
+    Serial.print((epoch  % 86400L) / 3600); // print the hour (86400 equals secs per day)
+    Serial.print(':');  
+    if ( ((epoch % 3600) / 60) < 10 ) {
+      // In the first 10 minutes of each hour, we'll want a leading '0'
+      Serial.print('0');
+    }
+    Serial.print((epoch  % 3600) / 60); // print the minute (3600 equals secs per minute)
+    Serial.print(':'); 
+    if ( (epoch % 60) < 10 ) {
+      // In the first 10 seconds of each minute, we'll want a leading '0'
+      Serial.print('0');
+    }
+    Serial.println(epoch %60); // print the second
+#endif
+    uint8_t DayOfWeek = dow(epoch); 
+    showTime("The UTC time: ", epoch, dow_char_EN(DayOfWeek));
+    DayOfWeek = dow(epoch + (9 * 60 * 60));
+    showTime("The JST time: ", epoch + (9 * 60 * 60), dow_char_JP(DayOfWeek));
+    
+  } else {
+    Serial.println("Waiting packets...");
+  }
+  delay(10000); 
+}
+unsigned long sendNTPpacket(IPAddress& address) //Sending RQ to NTP time server 
+{
+  memset(packetBuffer, 0, NTP_PACKET_SIZE);    // Set all buffer turn 0
+  packetBuffer[0] = 0b11100011;   //Set LI, Version, Mode
+  packetBuffer[1] = 0;     //Set Stratum, or type of clock
+  packetBuffer[2] = 6;     //Set Polling Interval
+  packetBuffer[3] = 0xEC;  //Set Peer Clock Precision
+  
+  //Set to 8 bytes of zero for Root Delay & Root Dispersion
+  packetBuffer[12]  = 49; 
+  packetBuffer[13]  = 0x4E;
+  packetBuffer[14]  = 49;
+  packetBuffer[15]  = 52;
+  // all NTP fields have been given values, now
+  // you can send a packet requesting a timestamp:            
+  Udp.beginPacket(address, 123); //NTP requests are running at port 123
+  Udp.write(packetBuffer,NTP_PACKET_SIZE);
+  Udp.endPacket(); 
+}
