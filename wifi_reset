@@ -1,0 +1,31 @@
+void resetToFactoryDefaults() {
+  WiFi.disconnect();
+  delay(3000);
+  hardwareReset();
+}
+
+void hardwareReset() {
+  pinMode(g_nPinReset, OUTPUT);
+  digitalWrite(g_nPinReset, false);
+  delay(3000);
+}
+
+void isrResetToFactoryDefaults(void) {
+  Serial.println("Resetting to factory defaults");
+  g_bShouldResetToFactorySettings = true;
+}
+
+void setupWifi() {
+  //WiFiManager
+  //Local intialization. Once its business is done, there is no need to keep it around
+  WiFiManager wifiManager;
+  //exit after config instead of connecting
+  wifiManager.setBreakAfterConfig(true);
+  //tries to connect to last known settings if it does not connect it starts an access point with the specified name
+  //here  "AutoConnectAP" with password "password" and goes into a blocking loop awaiting configuration
+  if (!wifiManager.autoConnect()) {
+    Serial.println("failed to connect, we should reset as see if it connects");
+    hardwareReset();
+  }
+...
+}
