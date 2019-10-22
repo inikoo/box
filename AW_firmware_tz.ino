@@ -14,7 +14,8 @@ Aw Firmware file date 26/9/19
 #include "StringSplitter.h"
 
 
-
+String mySerial="test0019";
+bool fact_reset=false;
 
 
 //config file ------------------------------
@@ -28,7 +29,7 @@ struct Config {
               bool new_box;
               char wifi_ssid[255];
               char wifi_pass[255];
-              char box_name[64];
+      
               char box_serial[24];
               long offset;
               String key;
@@ -83,7 +84,7 @@ RTC_DS1307 rtc;
 bool wifi_conn=false;
 bool tcp_conn=false;
 bool off_line=false;
-String mySerial="test0001";
+
 
 
 //==========================================================
@@ -92,8 +93,10 @@ void setup()
 
   // Decalre config Hard code (not save in SD)
 
-config.key="jwUFBkWWbuilHBTEHxqWuScj80WIpVMH";
-
+   config.key="jwUFBkWWbuilHBTEHxqWuScj80WIpVMH";
+  
+   strcpy(config.hostname,"box.inikoo.com");
+   
  
 
 //---------------------------------------------------
@@ -102,8 +105,7 @@ config.key="jwUFBkWWbuilHBTEHxqWuScj80WIpVMH";
    
    Serial.begin(115200);
    Serial2.begin(115200);
-
-  
+ 
    //initial variables 
    tagID="";
    pinMode(buzz,OUTPUT);
@@ -114,20 +116,17 @@ config.key="jwUFBkWWbuilHBTEHxqWuScj80WIpVMH";
    
     if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
     Serial.println(F("SSD1306 allocation failed"));
-    for(;;); // Don't proceed, loop forever
+    setup();
   }
  ///----------------------------------- Read Configeration-----------------------------
 
    SPI.begin(); 
+   
    ReadConfig();
    SPI.end(); 
    delay(3000);
- do{  
-         result=conn();
-
-   }while(result);
-
-  
+   conn();
+      Serial.println("Ready");
  
   if (check_box_states()){
 
@@ -170,8 +169,9 @@ config.key="jwUFBkWWbuilHBTEHxqWuScj80WIpVMH";
 
 
 void loop()
-{
-
+{  
+   i++;
+ 
   if(off_line){
 
     setup();
@@ -179,10 +179,14 @@ void loop()
 
 //================== Time======================= 
 
-mYrtc();
-rfid_get();
+        mYrtc();
+        rfid_get();
 
-//sync();
+ if(i>5000){
+  sync();
+  i=0;
+ }
+ 
 }
 
 
@@ -201,7 +205,8 @@ void ReadConfig(){
   }
 
     Serial.println(F("Loading configuration..."));
-   // saveConfiguration(filename, config,"Amila@unifi","123456789","ttest0001",228800);
+   
+    fac_reset();
     loadConfiguration(filename, config);
     
     display.clearDisplay();
@@ -388,7 +393,6 @@ void saveConfiguration(const char *filename, const Config &config,String ssid,St
   // Set the values in the document
   doc["hostname"] = (String)config.hostname;
   doc["boxname"]= boxName;
-  doc["http_port"] = 80;
   doc["offset"]=offset;
   doc["box_serial"]=mySerial;
   doc["wifi_ssid"]=ssid;
@@ -649,20 +653,7 @@ void welcome(){
   
 //welcome sscreen ============================================
 
-              display.clearDisplay();
-              display.setTextSize(2);             // Normal 1:1 pixel scale
-              display.setTextColor(WHITE);        // Draw white text
-              display.setCursor(0,0);             // Start at top-left corner
-              display.println(F("Getting"));
-               display.setCursor(0,17); 
-              display.println(F("Online..."));
-              //display.setCursor(0,20); 
-              //display.println(F("password: 12341234"));
-              display.display();
-              delay(2000);
-
-
-
+    
 
                       display.clearDisplay();
                       display.setTextSize(1);             // Normal 1:1 pixel scale
@@ -681,48 +672,64 @@ void register_box(){
  
  String state="Wating";
  String cmd2="";
- Serial2.flush();
+ int i=0;
  delay(1000);
    
-               do{
+do{
+                           i++;
+                       
+                         Serial2.flush();
+                         delay(100);
                          cmd2=get_server_responce("register=Helio");
-                     
-                         state=to_json(cmd2,"state");
+                        if(cmd2.length()>5){
+
+                        
+
+                           state=to_json(cmd2,"state");
                          state.trim();
-                          Serial.println(state);
+                         Serial.println(i);
+                          Serial.println(cmd2);
+
+
+
+                          
+                        }
+                         
+
+                          if(state=="Registered"){
+
+                            break;
+                          }
 
 
                                     
                           display.clearDisplay();
-                          display.setTextSize(1);             // Normal 1:1 pixel scale
+                          display.setTextSize(2);             // Normal 1:1 pixel scale
                           display.setTextColor(WHITE);        // Draw white text
-                          display.setCursor(0,0);             // Start at top-left corner
-                          display.println(F("Proceed to Register"));
-                          display.setCursor(0,10); 
+                          display.setCursor(0,0);             // Start at top-left cor
                           display.println(config.box_serial);
-                        
                           display.display();
-                      
-                      
-                          delay(5000);
-                      
-                           display.clearDisplay();
-                          display.setTextSize(1);             // Normal 1:1 pixel scale
-                          display.setTextColor(WHITE);        // Draw white text
-                          display.setCursor(0,0);             // Start at top-left corner
-                          display.println(F("Server Responce :"));
-                          display.setCursor(0,10); 
-                          display.println(state);
-                        
-                          display.display();
-                          delay(15000);
+                          delay(2000);
+                          Serial2.flush();
+                          Serial2.flush();
+
+                          if(i>10){
+                            i=0;
+                           resetFunc();
+                            
+                          }
     
    }while(!(state=="Registered"));
 
- reconfig(cmd2);
+ reconfig_val(cmd2);
   
 }
 bool wifi_setup(){
+
+   Serial2.flush();
+   delay(200);
+   Serial2.flush();
+   delay(200);
 
   bool state=true;
 
@@ -752,75 +759,46 @@ bool wifi_setup(){
                display.print(F("Pwd:"));
                display.print(config.wifi_pass);
                display.display();
-               delay(10000);
+               delay(1000);
 
-                for(i=0;10>i;i++){
+ 
 
-                 Serial.println("check conection");
-                 Serial2.println("1983");
-                 delay(100);
-                 while( Serial2.available() > 0 ) {
-                         cmd2 = Serial2.readStringUntil('\n');
-                        Serial.println(cmd2);
-                      }
-                    
-                  cmd2.trim();
-                  delay(2000);
-
-                 Serial.println("check conection");
-                 Serial2.println("1983");
-                 delay(100);
+                  cmd2=wifi_check();
                  
-                 while( Serial2.available() > 0 ) {
-                         cmd2 = Serial2.readStringUntil('\n');
-                        Serial.println(cmd2);
-                      }
-                    
-                  cmd2.trim();
-                  delay(2000);
-
-                 Serial.println("check conection");
-                 Serial2.println("1983");
-                 delay(100);
-                 
-                 while( Serial2.available() > 0 ) {
-                         cmd2 = Serial2.readStringUntil('\n');
-                        Serial.println(cmd2);
-                      }
-                    
-                  cmd2.trim();
-                  delay(2000);
-                  Serial.println("final command");
-                   Serial.println(cmd2);
-              
-
-                 
-                 if(2277==cmd2.toInt()){
+                 if(wifi_conn){
 
                       Serial.println("connected to wifi");
-                      display.clearDisplay();
-                      display.setTextSize(2);             // Normal 1:1 pixel scale
-                      display.setTextColor(WHITE);        // Draw white text
-                      display.setCursor(0,0);             // Start at top-left corner
-                      display.println(F("On Line"));
-                      display.setCursor(0,17); 
-                      display.display();
+               
                       wifi_conn=true;
                       state=false;
-                      break;
+                  
                       
                  }
 
 
-                 if(3388==cmd2.toInt()){
-                 //Serial2.println("9999 Helio%  12341234%");
-                  Serial2.println(cmd);
+                 if(!wifi_conn){
+
+                 
+                  delay(300);
+                 
+                     Serial2.println(cmd);
                      state=wifi_scan();
-                     delay(2000);
+                     delay(3000);
                  }
 
+                 if(cmd2==""){
+
+                  display.clearDisplay();
+                  display.setTextSize(1);             // Normal 1:1 pixel scale
+                  display.setTextColor(WHITE);        // Draw white text
+                  display.setCursor(0,0);             // Start at top-left corner
+                  display.println(F("Wifi Cad Not Detected"));
+                  display.display();
+                  delay(1000);
+                  }
+
            delay(2000);
-        }
+   
 
 
 return state;
@@ -900,6 +878,7 @@ bool tcpip_setup(){
 }
 
 
+
 bool wifi_scan(){
 bool state=true;
  String result;
@@ -910,24 +889,35 @@ bool state=true;
                          Serial.println(result);
                          result.trim();
 
-                         
-                         
-                             
+                    
                         if(8888==result.toInt()){
          
-                                serial_wait(4445);
-                                display.clearDisplay();
-                                display.setTextSize(2);             // Normal 1:1 pixel scale
-                                display.setTextColor(WHITE);        // Draw white text
-                                display.setCursor(0,0);             // Start at top-left corner
-                                display.println(F("On Line"));
-                                display.display();
-                                delay(5000);
-                                wifi_conn=true;
-                                state=false;
-                                break;
+              
+                         
+                                wifi_conn= serial_wait(4545);
                                 
-                                                        
+                                if (!wifi_conn){
+                                 state=true;
+                                 display.clearDisplay();
+                                 display.setTextSize(1);             // Normal 1:1 pixel scale
+                                 display.setTextColor(WHITE);        // Draw white text
+                                 display.setCursor(0,0);             // Start at top-left corner
+                                 display.println(F("Wrong wifi Setting"));
+                                 display.setCursor(0,10);
+                                 display.println(F("Switch off/On")); 
+                              
+                                 display.display();
+
+                                 delay(5000);
+                                 fac_reset();
+                                  break; 
+                                }else{
+
+                                  state=false;
+                                  break;
+                                }
+   
+                              break;                           
                             }
                             else{
                                  display.clearDisplay();
@@ -939,7 +929,6 @@ bool state=true;
                                  display.println(result); 
                                  display.display();
                                 
-
 
                           if(1122==result.toInt()){
                             
@@ -967,10 +956,12 @@ bool state=true;
 
  
 }
-void serial_wait( int val){
+bool serial_wait( int val){
+
+  bool check=true;
 
   int i=0;
-
+  int j=0;
 String reply="";
   do{
     delay(100);
@@ -981,6 +972,33 @@ String reply="";
 
         if(reply.toInt()==1100){
           break;
+          check=true;
+        }
+
+        if(reply.toInt()==2171){
+          break;
+          check=true;
+        }
+
+        if(reply.toInt()==5454){
+
+             display.clearDisplay();
+                 display.setTextSize(1);             // Normal 1:1 pixel scale
+                 display.setTextColor(WHITE);        // Draw white text
+                 display.setCursor(0,0);             // Start at top-left corner
+                 display.println(F("Wrong wifi Setting"));
+                 display.setCursor(0,10);
+                 display.println(F("Switch off/On")); 
+              
+                 display.display();
+          
+                 delay(2000);
+                check=false;
+                fact_reset=true;
+                fac_reset();
+
+          break;
+          check=false;
         }
 
 
@@ -997,10 +1015,32 @@ String reply="";
          display.println(F("*"));
          display.display();
                if(i>100){
-                i=100;
+                i=0;
+                j++;
+               }
+
+               if(j>2){
+                 display.clearDisplay();
+                 display.setTextSize(1);             // Normal 1:1 pixel scale
+                 display.setTextColor(WHITE);        // Draw white text
+                 display.setCursor(0,0);             // Start at top-left corner
+                 display.println(F("Wrong wifi Setting"));
+                 display.setCursor(0,10);
+                 display.println(F("Switch off/On")); 
+              
+                 display.display();
+          
+                 delay(2000);
+                check=false;
+                fact_reset=true;
+                fac_reset();
+                break; 
                }
         
-  }while(reply.toInt()!=val);
+  }while(reply.toInt()!=1100);
+
+
+  return check;
 }
 void  getTimeandDate(String offSet){
 
@@ -1069,9 +1109,15 @@ void  getTimeandDate(String offSet){
 
   }else if(tcp_conn){
 
-
-
-
+                          display.clearDisplay();
+                          display.setTextSize(1);             // Normal 1:1 pixel scale
+                          display.setTextColor(WHITE);        // Draw white text
+                          display.setCursor(0,0);             // Start at top-left corner
+                          display.println(F("Connect Wifi to time Sync"));
+                          display.setCursor(0,10); 
+                          display.println(config.wifi_ssid);
+                          display.display(); 
+                          delay(3000);
 
     
   }else{
@@ -1085,24 +1131,43 @@ void  getTimeandDate(String offSet){
 bool conn()
 {
        
-      tcp_conn = !tcpip_setup();
-      wifi_conn=!wifi_setup();
+      tcp_conn = false;//!tcpip_setup();
 
       if(tcp_conn){
-        Serial.println("TCP conectted");
-        return false;
-      }else if(wifi_conn){
+
+       wifi_conn=!wifi_setup();
         
-        Serial.println("Wifi Connected");
+      }else{
+
+          do{
+
+            wifi_conn=!wifi_setup();
+
+            
+          }while(! wifi_conn);
+
+       }
+     
+ if(tcp_conn || wifi_conn ){
+         Serial.println("On Line");
+         display.clearDisplay();
+        display.setTextSize(2);             // Normal 1:1 pixel scale
+        display.setTextColor(WHITE);        // Draw white text
+        display.setCursor(0,0);             // Start at top-left corner
+        display.println(F("On Line"));
+         
+        display.display();
+        delay(2000);
         return false;
       }else{
+         Serial.println("Off line");
+        off_line=true;
         return true;
       }
-     
-  
+
 }
 
-void reconfig(String cmd2)
+void reconfig_val(String cmd2)
 {
 
   
@@ -1110,49 +1175,77 @@ void reconfig(String cmd2)
  String myName=to_json(cmd2,"name");
  String wifi_ssid=to_json(cmd2,"SSID");
  String wifi_pass=to_json(cmd2,"wifi_pwd");
+ 
+
+ strcpy(config.wifi_ssid,wifi_ssid.c_str());
+ strcpy(config.wifi_pass,wifi_ssid.c_str());
+ strcpy(config.boxname,myName.c_str());
+
+ if(myName.length()>5 && wifi_ssid.length()>5 && wifi_pass.length()>5){
+
+    saveConfiguration(filename, config,wifi_ssid,wifi_pass,myName,timeOffset.toInt());
+  
+ }
+
+if(timeOffset.toInt()>0){
+
+   getTimeandDate(timeOffset);
+}
 
  
                         
-                        if(((String)config.offset).toInt()!=timeOffset.toInt())
-                         {
-                            config.offset=timeOffset.toInt();
-                            getTimeandDate(timeOffset);
-                                  saveConfiguration(filename, config,wifi_ssid,wifi_pass,myName,timeOffset.toInt());
-                                  display.clearDisplay();
-                                  display.setTextSize(1);             // Normal 1:1 pixel scale
-                                  display.setTextColor(WHITE);        // Draw white text
-                                  display.setCursor(0,0);             // Start at top-left corner
-                                  display.println(F("Time Zone offset:"));
-                                  display.setCursor(0,10); 
-                                  display.println(config.offset);
-                                  display.display();
-                                  delay(3000);
-                         }
+//                        if(((String)config.offset).toInt()!=timeOffset.toInt())
+//                         {
+//                            config.offset=timeOffset.toInt();
+//                            getTimeandDate(timeOffset);
+//                               
+//                                  display.clearDisplay();
+//                                  display.setTextSize(1);             // Normal 1:1 pixel scale
+//                                  display.setTextColor(WHITE);        // Draw white text
+//                                  display.setCursor(0,0);             // Start at top-left corner
+//                                  display.println(F("Time Zone offset:"));
+//                                  display.setCursor(0,10); 
+//                                  display.println(config.offset);
+//                                  display.display();
+//                                  delay(3000);
+//                         }
 
-
-                    if(((String)config.wifi_ssid).trim() !=wifi_ssid || ((String)config.wifi_pass).trim() !=wifi_pass )
-                     {
-                              saveConfiguration(filename, config,wifi_ssid,wifi_pass,myName,timeOffset.toInt());
-                              display.clearDisplay();
-                              display.setTextSize(1);             // Normal 1:1 pixel scale
-                              display.setTextColor(WHITE);        // Draw white text
-                              display.setCursor(0,0);             // Start at top-left corner
-                              display.println(F("Wifi Reset"));
-                              display.setCursor(0,10); 
-                              display.println(config.wifi_ssid);
-                              display.display();
-                              delay(3000);
-                    
-                               setup();
-                             
-                     
-                     
-                     }
+//
+//                    if((String)config.wifi_ssid !=wifi_ssid || (String)config.wifi_pass !=wifi_pass )
+//                     {
+//                              saveConfiguration(filename, config,wifi_ssid,wifi_pass,myName,timeOffset.toInt());
+//                              display.clearDisplay();
+//                              display.setTextSize(1);             // Normal 1:1 pixel scale
+//                              display.setTextColor(WHITE);        // Draw white text
+//                              display.setCursor(0,0);             // Start at top-left corner
+//                              display.println(F("Wifi Reset"));
+//                              display.setCursor(0,10); 
+//                              display.println(config.wifi_ssid);
+//                              display.display();
+//                              delay(3000);
+//                    
+//                             //  setup();
+//                             
+//                     
+//                     
+//                     }
                             
 
 }
 bool check_box_states(){
 
+  
+ display.clearDisplay();
+
+                       display.setTextSize(1);             // Normal 1:1 pixel scale
+                     display.setTextColor(WHITE);        // Draw white text
+                         display.setCursor(0,0);             // Start at top-left corner
+                         display.println(F("Waiting For"));
+                         display.setCursor(0,10); 
+                         display.println(F("Server Responce.."));
+                         display.display();
+
+                
   
    String cmd2=get_server_responce("register=Helio");
    String state=to_json(cmd2,"state" );
@@ -1160,15 +1253,13 @@ bool check_box_states(){
    if(state=="Registered"){
                              return true;
                            }else if(state=="Waiting"){
-                                         saveConfiguration(filename, config,"Helio","12341234","xxxx",0);
+                                         
                                          return false;
                                       }
                                         else{
-                                               setup();
+                                               check_box_states();
                                                                                 
                                         }                                 
-
-
   
 }
 
@@ -1178,11 +1269,14 @@ void sync()
 
    String cmd=get_server_responce("register=Helio");
    Serial.println(cmd);
-   reconfig(cmd);
+   reconfig_val(cmd);
 }
 
 
 String get_server_responce(String action){
+
+
+ // wifi_check();
 
     //register=Helio
   
@@ -1200,35 +1294,106 @@ String get_server_responce(String action){
                        cmd.trim();     
                             
 
-    
+                 
                   }else if(wifi_conn ){
-                        
-                      
-
-                         Serial2.println(wifi_cmd);
-                             delay(100);
-                             for(i=0;i<100;i++){
-                                                   cmd = Serial2.readStringUntil('\n');// Serial.println(cmd2);
-                                                   if (cmd.length()>10){
-                                  
-                                                            break;
-                                                   }
-                                                   delay(100);
-                                               }
+                                
+                                Serial.println("conect Sever -wifi- mode");
+                                
+                                  delay(100);
+                                  Serial2.println(wifi_cmd);
+        
+                            for(i=0;i<20;i++){  
+                               cmd= Serial2.readStringUntil('\n');
+                                 cmd.trim();
+                                   //Serial.println(cmd);
+                                    if (cmd.length()>5){
                   
-                            cmd.trim(); 
+                                       break;
+                                  }
+                                 delay(10);
+                                }
+                         
                         
-                    
+
                   }else{
 
                      setup();
                   }
-
-
- 
-  
+ cmd.trim(); 
  return cmd;
 
  
+}
+
+void fac_reset(){
+   if(fact_reset){
+     Serial2.println(5555);
+
+     delay(1000);
+      saveConfiguration(filename, config,"Helio","12341234", "Helio",0);
+
+          delay(1000);
+
+                               
+       display.clearDisplay();
+       display.setTextSize(1);             // Normal 1:1 pixel scale
+       display.setTextColor(WHITE);        // Draw white text
+       display.setCursor(0,0);             // Start at top-left corner
+       display.println(F("Factroy Reset"));
+       display.setCursor(0,10);
+       display.println(F("Switch off/On")); 
+    
+       display.display();
+
+       delay(5000);
+
+       
+
+      fact_reset=false;
+
+      resetFunc();
+
+                                 
+
+    }
+}
+
+String wifi_check(){
+
+  String cmd2="";
+
+                  Serial2.flush();
+                    delay(100);
+                 Serial2.println("1983");
+                 delay(100);
+                 while( Serial2.available() > 0 ) {
+                         cmd2 = Serial2.readStringUntil('\n');
+                        
+                      }
+
+
+                        
+                 if(2277==cmd2.toInt()){
+
+               
+                      wifi_conn=true;
+                      Serial.println("wifi conected");
+                      
+                 }else if(3388==cmd2.toInt()){
+
+                      wifi_conn=false;
+                      Serial.println("wifi fail");
+
+                      
+                  
+                 }else{
+ 
+                      wifi_check(); 
+                 }
+
+                  delay(100);
+
+
+   return cmd2;
 }
  
