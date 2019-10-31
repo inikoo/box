@@ -33,7 +33,7 @@ NTPClient timeClient(ntpUDP);
 String formattedDate;
 String dayStamp;
 String timeStamp;
-
+void(* resetFunc) (void) = 0; 
 
 void setup() {
   
@@ -52,7 +52,7 @@ void setup() {
  
   }
   else{
-     Serial.println("5454");
+     Serial.println("6464");
     // WiFi.begin(ssid,password);
   }
   
@@ -83,7 +83,26 @@ void loop() {
               
               tagSend(tag_id,url);
     
+            } 
+
+
+            if(state==5555){
+
+               Serial.println("Reset Wifi Card");
+               WiFi.disconnect(true);
+               WiFi.setAutoConnect(false); 
+               delay(300);
+               ESP.eraseConfig();
+               delay(300);
+               
+               ESP.reset();
+               delay(300);
+               
+               ESP.restart();
+              
             }
+
+            
 
             if (state == 9999){
           
@@ -208,11 +227,23 @@ pass.trim();
   //WiFi.printDiag(Serial);
   
   WiFi.begin(ssid_z,password);
-
+ int p=0;
 
    while (WiFi.status() != WL_CONNECTED) {
     delay(100);
-    Serial.println("4545");
+    p++;
+    if(p>150){
+      Serial.println("5454");
+    }
+    else{
+      Serial.println("4545");
+    }
+
+    if(p>160){
+
+     resetFunc();
+    }
+    
   }
 
   
@@ -301,6 +332,7 @@ void scan(String ssid_new,String pass_new){
   WiFi.disconnect(true);
   WiFi.setAutoConnect(false);
   WiFi.setPhyMode(WIFI_PHY_MODE_11G);
+  delay(300);
   Serial.println(7777);
   Serial.println("Scan start ... ");
   int n = WiFi.scanNetworks();
@@ -326,5 +358,7 @@ void scan(String ssid_new,String pass_new){
 
  
 }
+
+
  
  
